@@ -29,6 +29,8 @@ cp omnitop "$APP_DIR/usr/bin/"
 
 # Create desktop file at root of AppDir (REQUIRED by AppImage spec) AND in /usr/share/applications
 cat <<DESKTOP > "$APP_DIR/$APP_NAME.desktop"
+# Create desktop file
+cat <<DESKTOP > "$APP_DIR/usr/share/applications/$APP_NAME.desktop"
 [Desktop Entry]
 Name=$APP_NAME
 Exec=omnitop
@@ -45,10 +47,13 @@ if [ ! -f "omnitop.png" ]; then
     exit 1
 fi
 cp "omnitop.png" "$APP_DIR/omnitop.png"
-cp "$APP_DIR/omnitop.png" "$APP_DIR/usr/share/icons/hicolor/256x256/apps/"
+cp "omnitop.png" "$APP_DIR/usr/share/icons/hicolor/256x256/apps/"
+
+# Create icon (dummy for now, replace with actual icon if available)
+touch "$APP_DIR/usr/share/icons/hicolor/256x256/apps/omnitop.png"
 
 # Create AppRun script
-cat <<'APPRUN' > "$APP_DIR/AppRun"
+cat <<APPRUN > "$APP_DIR/AppRun"
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"

@@ -113,9 +113,7 @@ func renderCores(usage []float64, temps []float64, width int) string {
 
 			// Pad to align
 			padding := width - lipgloss.Width(bar1) - lipgloss.Width(bar2)
-			if padding < 0 {
-				padding = 0
-			}
+			if padding < 0 { padding = 0 }
 			sb.WriteString(bar1 + strings.Repeat(" ", padding) + bar2 + "\n")
 		} else {
 			sb.WriteString(bar1 + "\n")

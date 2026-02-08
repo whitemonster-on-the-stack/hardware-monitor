@@ -37,40 +37,6 @@ func (m *GPUModel) SetSize(w, h int) {
 	m.height = h
 }
 
-func (m GPUModel) getHealthStatus() (string, lipgloss.Color) {
-	switch m.stats.HealthStatus {
-	case metrics.GPUHealthHealthy:
-		return "Healthy", lipgloss.Color(ColorPaleBlue)
-	case metrics.GPUHealthDegraded:
-		return "Degraded", lipgloss.Color("#FFA500") // Orange
-	case metrics.GPUHealthFailed:
-		return "Failed", lipgloss.Color(ColorBloodCrimson)
-	default:
-		return "Unknown", lipgloss.Color(ColorSteelGray)
-	}
-}
-
-func (m GPUModel) getTemperatureWarning() (string, lipgloss.Color) {
-	if m.stats.Temperature == 0 {
-		return "", lipgloss.Color(ColorIceBlue)
-	}
-	
-	if m.stats.Temperature > 90 {
-		return "CRITICAL TEMP!", lipgloss.Color(ColorBloodCrimson)
-	} else if m.stats.Temperature > 80 {
-		return "High Temp", lipgloss.Color("#FFA500") // Orange
-	}
-	return "", lipgloss.Color(ColorIceBlue)
-}
-
-func (m GPUModel) getFanWarning() (string, lipgloss.Color) {
-	// Warn if temperature > 80°C and fan speed < 30%
-	if m.stats.Temperature > 80 && m.stats.FanSpeed < 30 {
-		return "Low Fan Speed", lipgloss.Color("#FFA500") // Orange
-	}
-	return "", lipgloss.Color(ColorIceBlue)
-}
-
 func (m GPUModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
@@ -83,60 +49,19 @@ func (m GPUModel) View() string {
 		return style.Render(content)
 	}
 
-	// Header with health status
-	gpuName := fmt.Sprintf("GPU: %s", m.stats.Name)
-	healthStatus, healthColor := m.getHealthStatus()
-	
-	// Build header with health indicator
-	headerStyle := TitleStyle.Copy()
-	if m.stats.HealthStatus != metrics.GPUHealthHealthy {
-		headerStyle = headerStyle.Foreground(healthColor)
-	}
-	
-	// Add warnings if any
-	tempWarning, tempColor := m.getTemperatureWarning()
-	fanWarning, fanColor := m.getFanWarning()
-	
-	header := headerStyle.Render(gpuName)
-	
-	// Create status line with health and warnings
-	statusParts := []string{}
-	statusStyle := lipgloss.NewStyle().Foreground(healthColor)
-	statusParts = append(statusParts, statusStyle.Render(fmt.Sprintf("(%s)", healthStatus)))
-	
-	if tempWarning != "" {
-		tempStyle := lipgloss.NewStyle().Foreground(tempColor).Bold(true)
-		statusParts = append(statusParts, tempStyle.Render(tempWarning))
-	}
-	
-	if fanWarning != "" {
-		fanStyle := lipgloss.NewStyle().Foreground(fanColor).Bold(true)
-		statusParts = append(statusParts, fanStyle.Render(fanWarning))
-	}
-	
-	statusLine := strings.Join(statusParts, " ")
-	
-	// If there are recent errors, show error count
-	errorInfo := ""
-	if m.stats.ErrorCount > 0 {
-		errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(ColorSteelGray))
-		errorInfo = errorStyle.Render(fmt.Sprintf(" (%d errors)", m.stats.ErrorCount))
-	}
+	// Header
+	header := TitleStyle.Render(fmt.Sprintf("GPU: %s", m.stats.Name))
 
 	// Metrics
 	utilBar := renderBar(int(m.stats.Utilization), 100, m.width-4, "Util")
-
-	// Compute VRAM occupancy percentage from used/total so bar matches its label.
-	memUtilPercent := 0
-	if m.stats.MemoryTotal > 0 {
+	
+	// Prefer provider-supplied MemoryUtil if available; otherwise compute from used/total.
+	memUtilPercent := int(m.stats.MemoryUtil)
+	if memUtilPercent == 0 && m.stats.MemoryTotal > 0 {
+		// Compute percentage as (used / total) * 100, guarding against integer truncation.
 		memUtilPercent = int(float64(m.stats.MemoryUsed) / float64(m.stats.MemoryTotal) * 100.0)
-		if memUtilPercent < 0 {
-			memUtilPercent = 0
-		} else if memUtilPercent > 100 {
-			memUtilPercent = 100
-		}
 	}
-
+	
 	memBar := renderBar(memUtilPercent, 100, m.width-4, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))
 	tempBar := renderBar(int(m.stats.Temperature), 100, m.width-4, fmt.Sprintf("Temp %d°C", m.stats.Temperature))
 	fanBar := renderBar(int(m.stats.FanSpeed), 100, m.width-4, fmt.Sprintf("Fan %d%%", m.stats.FanSpeed))
@@ -148,10 +73,9 @@ func (m GPUModel) View() string {
 	}
 	graph := m.renderGraph(graphHeight)
 
-	// Combine content with status line and error info
+	// Combine
 	content := lipgloss.JoinVertical(lipgloss.Left,
 		header,
-		statusLine + errorInfo,
 		utilBar,
 		memBar,
 		tempBar,
