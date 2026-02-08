@@ -17,3 +17,18 @@ AppDir/
 
 # Dependency directories
 vendor/
+
+# Local coordination and development files
+COORDINATION.md
+implementation_plan.md
+*.log
+*.tmp
+*.temp
+*~
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# Build tools
+appimagetool-x86_64.AppImage

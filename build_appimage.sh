@@ -48,7 +48,7 @@ cp "omnitop.png" "$APP_DIR/omnitop.png"
 cp "$APP_DIR/omnitop.png" "$APP_DIR/usr/share/icons/hicolor/256x256/apps/"
 
 # Create AppRun script
-cat <<APPRUN > "$APP_DIR/AppRun"
+cat <<'APPRUN' > "$APP_DIR/AppRun"
 #!/bin/bash
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"

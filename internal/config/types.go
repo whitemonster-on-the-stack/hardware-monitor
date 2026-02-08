@@ -96,11 +96,11 @@ func (c *ProfileConfiguration) Validate() error {
 // DefaultConfig returns the default configuration matching current behavior.
 func DefaultConfig() *ProfileConfiguration {
 	return &ProfileConfiguration{
-		Theme:           "lich-king",
-		ColumnWidths:    map[string]float64{"gpu": 0.30, "process": 0.40, "cpu": 0.30},
-		RefreshInterval: 1000,
-		MaxProcesses:    200,
+		Theme:            "lich-king",
+		ColumnWidths:     map[string]float64{"gpu": 0.30, "process": 0.40, "cpu": 0.30},
+		RefreshInterval:  1000,
+		MaxProcesses:     200,
 		GPUHistoryLength: 100,
-		ShowTooltips:    true,
+		ShowTooltips:     true,
 	}
 }
