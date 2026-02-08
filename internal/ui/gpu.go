@@ -55,11 +55,15 @@ func (m GPUModel) View() string {
 	// Metrics
 	utilBar := renderBar(int(m.stats.Utilization), 100, m.width-4, "Util")
 	
-	// Prefer provider-supplied MemoryUtil if available; otherwise compute from used/total.
-	memUtilPercent := int(m.stats.MemoryUtil)
-	if memUtilPercent == 0 && m.stats.MemoryTotal > 0 {
-		// Compute percentage as (used / total) * 100, guarding against integer truncation.
+	// Compute VRAM occupancy percentage from used/total so bar matches its label.
+	memUtilPercent := 0
+	if m.stats.MemoryTotal > 0 {
 		memUtilPercent = int(float64(m.stats.MemoryUsed) / float64(m.stats.MemoryTotal) * 100.0)
+		if memUtilPercent < 0 {
+			memUtilPercent = 0
+		} else if memUtilPercent > 100 {
+			memUtilPercent = 100
+		}
 	}
 	
 	memBar := renderBar(memUtilPercent, 100, m.width-4, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))

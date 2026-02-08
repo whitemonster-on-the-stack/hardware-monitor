@@ -93,14 +93,13 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				stats.GPU.Available = true
 				name, _ := dev.Name()
 				stats.GPU.Name = name
-				util, memUtil, _ := dev.UtilizationRates()
+				util, _, _ := dev.UtilizationRates()
 				stats.GPU.Utilization = uint32(util)
-				stats.GPU.MemoryUtil = uint32(memUtil)
 				total, used, _ := dev.MemoryInfo()
 				stats.GPU.MemoryTotal = total
 				stats.GPU.MemoryUsed = used
-				// If MemoryUtil is not provided by the device, compute it
-				if stats.GPU.MemoryUtil == 0 && total > 0 {
+				// MemoryUtil should represent VRAM occupancy (used / total)
+				if total > 0 {
 					stats.GPU.MemoryUtil = uint32(float64(used) / float64(total) * 100.0)
 				}
 				temp, _ := dev.Temperature()
