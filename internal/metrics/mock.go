@@ -54,6 +54,10 @@ func (m *MockProvider) GetStats() (*SystemStats, error) {
 	m.lastStats.GPU.GraphicsClock = 2500
 	m.lastStats.GPU.MemoryClock = 10500
 	m.lastStats.GPU.PowerUsage = 150000 // mW
+	// Compute VRAM utilization percentage
+	if m.lastStats.GPU.MemoryTotal > 0 {
+		m.lastStats.GPU.MemoryUtil = uint32(float64(m.lastStats.GPU.MemoryUsed) / float64(m.lastStats.GPU.MemoryTotal) * 100.0)
+	}
 
 	// Historical Graph
 	m.lastStats.GPU.HistoricalUtil = append(m.lastStats.GPU.HistoricalUtil[1:], float64(m.lastStats.GPU.Utilization))

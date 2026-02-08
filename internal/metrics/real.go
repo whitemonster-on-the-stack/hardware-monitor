@@ -13,7 +13,8 @@ import (
 )
 
 type RealProvider struct {
-	hasGPU bool
+	hasGPU     bool
+	gpuHistory []float64
 }
 
 func (r *RealProvider) Init() error {
@@ -23,6 +24,8 @@ func (r *RealProvider) Init() error {
 		r.hasGPU = false
 	} else {
 		r.hasGPU = true
+		// Initialize GPU history buffer
+		r.gpuHistory = make([]float64, 0, 60)
 	}
 	return nil
 }
@@ -89,8 +92,9 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				stats.GPU.Available = true
 				name, _ := dev.Name()
 				stats.GPU.Name = name
-				util, _, _ := dev.UtilizationRates()
+				util, memUtil, _ := dev.UtilizationRates()
 				stats.GPU.Utilization = uint32(util)
+				stats.GPU.MemoryUtil = uint32(memUtil)
 				total, used, _ := dev.MemoryInfo()
 				stats.GPU.MemoryTotal = total
 				stats.GPU.MemoryUsed = used
@@ -100,6 +104,14 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				stats.GPU.FanSpeed = uint32(fan)
 				power, _ := dev.PowerUsage()
 				stats.GPU.PowerUsage = uint32(power)
+				
+				// Update GPU history
+				r.gpuHistory = append(r.gpuHistory, float64(util))
+				if len(r.gpuHistory) > 60 {
+					r.gpuHistory = r.gpuHistory[1:]
+				}
+				stats.GPU.HistoricalUtil = make([]float64, len(r.gpuHistory))
+				copy(stats.GPU.HistoricalUtil, r.gpuHistory)
 			}
 		}
 	}

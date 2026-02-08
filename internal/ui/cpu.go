@@ -126,7 +126,7 @@ func renderCores(usage []float64, temps []float64, width int) string {
 func renderBarCompact(value, max, width int, label string) string {
 	// [Label  |||||     ]
 	// Label takes some space.
-	labelLen := len(label)
+	labelLen := lipgloss.Width(label)
 	barLen := width - labelLen - 3 // [ ] and space
 	if barLen < 5 {
 		return fmt.Sprintf("%s %d%%", label, value)

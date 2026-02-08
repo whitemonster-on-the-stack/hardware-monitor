@@ -54,7 +54,15 @@ func (m GPUModel) View() string {
 
 	// Metrics
 	utilBar := renderBar(int(m.stats.Utilization), 100, m.width-4, "Util")
-	memBar := renderBar(int(m.stats.MemoryUtil), 100, m.width-4, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))
+	
+	// Prefer provider-supplied MemoryUtil if available; otherwise compute from used/total.
+	memUtilPercent := int(m.stats.MemoryUtil)
+	if memUtilPercent == 0 && m.stats.MemoryTotal > 0 {
+		// Compute percentage as (used / total) * 100, guarding against integer truncation.
+		memUtilPercent = int(float64(m.stats.MemoryUsed) / float64(m.stats.MemoryTotal) * 100.0)
+	}
+	
+	memBar := renderBar(memUtilPercent, 100, m.width-4, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))
 	tempBar := renderBar(int(m.stats.Temperature), 100, m.width-4, fmt.Sprintf("Temp %d°C", m.stats.Temperature))
 	fanBar := renderBar(int(m.stats.FanSpeed), 100, m.width-4, fmt.Sprintf("Fan %d%%", m.stats.FanSpeed))
 
@@ -82,7 +90,7 @@ func renderBar(value, max, width int, label string) string {
 	if width < 10 {
 		return label
 	}
-	barWidth := width - len(label) - 2
+	barWidth := width - lipgloss.Width(label) - 2
 	if barWidth < 0 {
 		barWidth = 0
 	}
@@ -112,6 +120,9 @@ func (m GPUModel) renderGraph(height int) string {
 	// Use only last N points that fit width
 	data := m.stats.HistoricalUtil
 	maxPoints := m.width - 4
+	if maxPoints < 1 {
+		maxPoints = 1
+	}
 	if len(data) > maxPoints {
 		data = data[len(data)-maxPoints:]
 	}
