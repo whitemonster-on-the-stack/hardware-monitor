@@ -13,7 +13,9 @@ import (
 )
 
 type RealProvider struct {
-	hasGPU bool
+	hasGPU          bool
+	gpuHistoryUtil  []float64
+	maxHistoryLen   int
 }
 
 func (r *RealProvider) Init() error {
@@ -24,6 +26,8 @@ func (r *RealProvider) Init() error {
 	} else {
 		r.hasGPU = true
 	}
+	r.maxHistoryLen = 100 // Store last 100 data points
+	r.gpuHistoryUtil = make([]float64, 0, r.maxHistoryLen)
 	return nil
 }
 
@@ -89,17 +93,30 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				stats.GPU.Available = true
 				name, _ := dev.Name()
 				stats.GPU.Name = name
-				util, _, _ := dev.UtilizationRates()
+				util, memUtil, _ := dev.UtilizationRates()
 				stats.GPU.Utilization = uint32(util)
+				stats.GPU.MemoryUtil = uint32(memUtil)
 				total, used, _ := dev.MemoryInfo()
 				stats.GPU.MemoryTotal = total
 				stats.GPU.MemoryUsed = used
+				// If MemoryUtil is not provided by the device, compute it
+				if stats.GPU.MemoryUtil == 0 && total > 0 {
+					stats.GPU.MemoryUtil = uint32(float64(used) / float64(total) * 100.0)
+				}
 				temp, _ := dev.Temperature()
 				stats.GPU.Temperature = uint32(temp)
 				fan, _ := dev.FanSpeed()
 				stats.GPU.FanSpeed = uint32(fan)
 				power, _ := dev.PowerUsage()
 				stats.GPU.PowerUsage = uint32(power)
+
+				// Store historical utilization
+				r.gpuHistoryUtil = append(r.gpuHistoryUtil, float64(util))
+				if len(r.gpuHistoryUtil) > r.maxHistoryLen {
+					r.gpuHistoryUtil = r.gpuHistoryUtil[1:]
+				}
+				stats.GPU.HistoricalUtil = make([]float64, len(r.gpuHistoryUtil))
+				copy(stats.GPU.HistoricalUtil, r.gpuHistoryUtil)
 			}
 		}
 	}

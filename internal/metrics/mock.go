@@ -50,6 +50,7 @@ func (m *MockProvider) GetStats() (*SystemStats, error) {
 	m.lastStats.GPU.Utilization = uint32(50 + rand.Intn(30))
 	m.lastStats.GPU.Temperature = uint32(60 + rand.Intn(10))
 	m.lastStats.GPU.MemoryUsed = uint64(8 * 1024 * 1024 * 1024)
+	m.lastStats.GPU.MemoryUtil = uint32(float64(m.lastStats.GPU.MemoryUsed) / float64(m.lastStats.GPU.MemoryTotal) * 100)
 	m.lastStats.GPU.FanSpeed = uint32(40 + rand.Intn(10))
 	m.lastStats.GPU.GraphicsClock = 2500
 	m.lastStats.GPU.MemoryClock = 10500

@@ -6,7 +6,7 @@ OmniTop merges the best features of `nvtop`, `htop`, and `btop` into a single, c
 
 - **Unified Dashboard**: 3-column layout replicating your multi-window workflow.
   - **Left**: GPU History & Telemetry (NVTop style).
-  - **Middle**: Process Management (HTop style) with sorting, filtering, and killing.
+  - **Middle**: Process list (HTop style).
   - **Right**: Per-core CPU bars & Load Averages (BTop style).
 - **GPU First**: Native NVIDIA GPU monitoring via NVML (temps, fans, clocks, power).
 - **Lich King Theme**: Midnight Black, Ice Blue, and Blood Crimson aesthetics.
@@ -17,7 +17,7 @@ OmniTop merges the best features of `nvtop`, `htop`, and `btop` into a single, c
 
 ### From Source
 
-Requirements: Go 1.21+
+Requirements: Go 1.24.3+
 
 ```bash
 git clone https://github.com/google/omnitop.git
@@ -58,4 +58,4 @@ To create a portable AppImage:
 
 ## Configuration
 
-Default profiles are embedded. You can customize the layout by editing the source code in `internal/ui/root.go`.
+Configuration is currently embedded in the source code. Default profiles and layout are defined in `internal/ui/root.go`, so customizing the layout requires editing that file and rebuilding the binary (any `profiles.json` file in the repo is not yet wired into the application).

@@ -11,9 +11,11 @@ import (
 
 type TickMsg time.Time
 
+var tickRand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
 func tick() tea.Cmd {
 	// Add jitter: 900-1100ms
-	jitter := time.Duration(rand.Intn(200)-100) * time.Millisecond
+	jitter := time.Duration(tickRand.Intn(200)-100) * time.Millisecond
 	return tea.Tick(time.Second+jitter, func(t time.Time) tea.Msg {
 		return TickMsg(t)
 	})
@@ -52,10 +54,7 @@ func NewRootModel(provider metrics.Provider) RootModel {
 }
 
 func (m RootModel) Init() tea.Cmd {
-	return tea.Batch(
-		tea.EnterAltScreen,
-		tick(),
-	)
+	return tick()
 }
 
 func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -66,10 +65,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
-			m.provider.Shutdown()
 			return m, tea.Quit
-		case "m":
-			// Toggle mock? No, provider is set at start.
 		case "[": // Shrink Left Col
 			m.col1Pct -= 0.05
 			if m.col1Pct < 0.1 { m.col1Pct = 0.1 }
