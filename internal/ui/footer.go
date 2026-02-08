@@ -6,10 +6,12 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/omnitop/internal/metrics"
 )
 
 type FooterModel struct {
-	width int
+	width  int
+	uptime uint64
 }
 
 func NewFooterModel() FooterModel {
@@ -28,6 +30,10 @@ func (m *FooterModel) SetSize(w int) {
 	m.width = w
 }
 
+func (m *FooterModel) SetStats(stats *metrics.SystemStats) {
+	m.uptime = stats.Uptime
+}
+
 func (m FooterModel) View() string {
 	if m.width == 0 {
 		return ""
@@ -39,8 +45,12 @@ func (m FooterModel) View() string {
 		Foreground(lipgloss.Color(ColorMidnightBlack)).
 		Padding(0, 1)
 
-	// Left: Hostname/Uptime (Mocked for now or use os)
-	left := fmt.Sprintf("OmniTop | %s", time.Now().Format("15:04:05"))
+	// Format uptime
+	d := time.Duration(m.uptime) * time.Second
+	uptimeStr := fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
+
+	// Left: Hostname/Uptime
+	left := fmt.Sprintf("OmniTop | Uptime: %s | %s", uptimeStr, time.Now().Format("15:04:05"))
 
 	// Right: Hotkeys
 	right := "q: Quit | Arrows: Select | [ ] { }: Resize"

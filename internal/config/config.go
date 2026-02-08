@@ -1,77 +1,47 @@
-// internal/config/config.go
 package config
 
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 )
 
-// LoadConfig loads and validates configuration from the specified JSON file.
-// If the file doesn't exist or fails to parse, returns default configuration.
+// LoadConfig loads the configuration from the specified path.
+// If the file does not exist or is invalid, it returns the default configuration.
 func LoadConfig(path string) (*ProfileConfiguration, error) {
-	// Check if file exists
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		// File doesn't exist, return defaults
+	if path == "" {
 		return DefaultConfig(), nil
 	}
 
-	// Read file
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return DefaultConfig(), err
-	}
-
-	// Parse JSON
-	var config ProfileConfiguration
-	if err := json.Unmarshal(data, &config); err != nil {
-		return DefaultConfig(), err
-	}
-
-	// Validate and normalize
-	if err := config.Validate(); err != nil {
-		return DefaultConfig(), err
-	}
-
-	return &config, nil
-}
-
-// LoadDefaultConfig loads configuration from default location "profiles.json"
-// in the current working directory.
-func LoadDefaultConfig() (*ProfileConfiguration, error) {
-	// Try current directory first
-	configPath := "profiles.json"
-	if _, err := os.Stat(configPath); err == nil {
-		return LoadConfig(configPath)
-	}
-
-	// Try config directory relative to executable
-	exePath, err := os.Executable()
-	if err == nil {
-		exeDir := filepath.Dir(exePath)
-		configPath = filepath.Join(exeDir, "profiles.json")
-		if _, err := os.Stat(configPath); err == nil {
-			return LoadConfig(configPath)
+		// If file doesn't exist, return default without error (optional: return err if strict)
+		if os.IsNotExist(err) {
+			return DefaultConfig(), nil
 		}
+		return DefaultConfig(), err
 	}
 
-	// No config file found, return defaults
-	return DefaultConfig(), nil
+	var cfg ProfileConfiguration
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return DefaultConfig(), err
+	}
+
+	// Validate critical fields
+	if cfg.ColumnWidths == nil {
+		cfg.ColumnWidths = DefaultConfig().ColumnWidths
+	}
+	if cfg.RefreshInterval < 100 {
+		cfg.RefreshInterval = 100
+	}
+
+	return &cfg, nil
 }
 
-// SaveConfig writes configuration to the specified JSON file.
-func SaveConfig(config *ProfileConfiguration, path string) error {
-	// Validate before saving
-	if err := config.Validate(); err != nil {
-		return err
-	}
-
-	// Marshal with indentation
-	data, err := json.MarshalIndent(config, "", "  ")
+// SaveConfig saves the current configuration to the specified path.
+func SaveConfig(path string, cfg *ProfileConfiguration) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-
-	// Write file
 	return os.WriteFile(path, data, 0644)
 }

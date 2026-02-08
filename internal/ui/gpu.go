@@ -10,13 +10,16 @@ import (
 )
 
 type GPUModel struct {
-	width  int
-	height int
-	stats  metrics.GPUStats
+	width         int
+	height        int
+	stats         metrics.GPUStats
+	showProcesses bool
 }
 
 func NewGPUModel() GPUModel {
-	return GPUModel{}
+	return GPUModel{
+		showProcesses: false, // Default to graph view
+	}
 }
 
 func (m GPUModel) Init() tea.Cmd {
@@ -24,7 +27,13 @@ func (m GPUModel) Init() tea.Cmd {
 }
 
 func (m GPUModel) Update(msg tea.Msg) (GPUModel, tea.Cmd) {
-	// GPUModel is updated by the Root model passing new stats
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "g":
+			m.showProcesses = !m.showProcesses
+		}
+	}
 	return m, nil
 }
 
@@ -45,33 +54,53 @@ func (m GPUModel) View() string {
 	style := PanelStyle.Copy().Width(m.width).Height(m.height)
 
 	if !m.stats.Available {
-		content := lipgloss.Place(m.width-2, m.height-2, lipgloss.Center, lipgloss.Center, "GPU Unavailable")
+		content := lipgloss.Place(m.width-2, m.height-2, lipgloss.Center, lipgloss.Center, "GPU Unavailable\n(Run with --mock to see demo)")
 		return style.Render(content)
 	}
 
 	// Header
 	header := TitleStyle.Render(fmt.Sprintf("GPU: %s", m.stats.Name))
 
-	// Metrics
-	utilBar := renderBar(int(m.stats.Utilization), 100, m.width-4, "Util")
-	
-	// Prefer provider-supplied MemoryUtil if available; otherwise compute from used/total.
+	// Telemetry Bars
+	// Calculate bar width dynamically
+	barWidth := m.width - 4
+	if barWidth < 10 {
+		barWidth = 10
+	}
+
+	utilBar := renderBar(int(m.stats.Utilization), 100, barWidth, "Util")
+
 	memUtilPercent := int(m.stats.MemoryUtil)
 	if memUtilPercent == 0 && m.stats.MemoryTotal > 0 {
-		// Compute percentage as (used / total) * 100, guarding against integer truncation.
 		memUtilPercent = int(float64(m.stats.MemoryUsed) / float64(m.stats.MemoryTotal) * 100.0)
 	}
-	
-	memBar := renderBar(memUtilPercent, 100, m.width-4, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))
-	tempBar := renderBar(int(m.stats.Temperature), 100, m.width-4, fmt.Sprintf("Temp %d°C", m.stats.Temperature))
-	fanBar := renderBar(int(m.stats.FanSpeed), 100, m.width-4, fmt.Sprintf("Fan %d%%", m.stats.FanSpeed))
+	memBar := renderBar(memUtilPercent, 100, barWidth, fmt.Sprintf("VRAM %d/%d MB", m.stats.MemoryUsed/1024/1024, m.stats.MemoryTotal/1024/1024))
 
-	// Historical Graph (Simple Braille/Block implementation)
-	graphHeight := m.height - 10 // Reserve space for bars and header
-	if graphHeight < 5 {
-		graphHeight = 5
+	tempBar := renderBar(int(m.stats.Temperature), 100, barWidth, fmt.Sprintf("Temp %d°C", m.stats.Temperature))
+	fanBar := renderBar(int(m.stats.FanSpeed), 100, barWidth, fmt.Sprintf("Fan %d%%", m.stats.FanSpeed))
+
+	powerVal := int(m.stats.PowerUsage / 1000) // mW -> W
+	powerLimit := int(m.stats.PowerLimit / 1000)
+	powerLabel := fmt.Sprintf("Pwr %dW", powerVal)
+	if powerLimit > 0 {
+		powerLabel += fmt.Sprintf("/%dW", powerLimit)
 	}
-	graph := m.renderGraph(graphHeight)
+	powerBar := renderBar(powerVal, powerLimit, barWidth, powerLabel)
+
+	// Content selection (Graph vs Processes)
+	var mainContent string
+	availableHeight := m.height - 8 // Header + 5 bars + padding
+	if availableHeight < 5 {
+		availableHeight = 5
+	}
+
+	if m.showProcesses {
+		mainContent = m.renderProcessTable(availableHeight)
+	} else {
+		mainContent = m.renderGraph(availableHeight)
+	}
+
+	footer := MetricLabelStyle.Render("Press 'g' to toggle View")
 
 	// Combine
 	content := lipgloss.JoinVertical(lipgloss.Left,
@@ -80,13 +109,19 @@ func (m GPUModel) View() string {
 		memBar,
 		tempBar,
 		fanBar,
-		graph,
+		powerBar,
+		"\n",
+		mainContent,
+		footer,
 	)
 
 	return style.Render(content)
 }
 
 func renderBar(value, max, width int, label string) string {
+	if max <= 0 {
+		max = 100
+	} // Avoid divide by zero
 	if width < 10 {
 		return label
 	}
@@ -95,16 +130,17 @@ func renderBar(value, max, width int, label string) string {
 		barWidth = 0
 	}
 
-	filled := int(float64(value) / float64(max) * float64(barWidth))
-	if filled > barWidth {
-		filled = barWidth
+	ratio := float64(value) / float64(max)
+	if ratio > 1.0 {
+		ratio = 1.0
 	}
+	filled := int(ratio * float64(barWidth))
 	empty := barWidth - filled
 
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
 
 	style := BarStyle
-	if value > 80 {
+	if ratio > 0.8 {
 		style = AlertBarStyle
 	}
 
@@ -112,7 +148,6 @@ func renderBar(value, max, width int, label string) string {
 }
 
 func (m GPUModel) renderGraph(height int) string {
-	// Simple sparkline-like graph using the history
 	if len(m.stats.HistoricalUtil) == 0 {
 		return "Waiting for data..."
 	}
@@ -123,50 +158,78 @@ func (m GPUModel) renderGraph(height int) string {
 	if maxPoints < 1 {
 		maxPoints = 1
 	}
-	if len(data) > maxPoints {
-		data = data[len(data)-maxPoints:]
+
+	// Create a window of data
+	window := data
+	if len(window) > maxPoints {
+		window = window[len(window)-maxPoints:]
 	}
 
 	var sb strings.Builder
 	sb.WriteString(TitleStyle.Render("Utilization History"))
 	sb.WriteString("\n")
 
-	// Very simple graph for MVP: just iterate data and draw blocks relative to height
-	// A real braille graph requires 2x4 pixel mapping, which is complex to implement from scratch in one go without errors.
-	// We'll use vertical bars  ▂▃▄▅▆▇█
+	// Braille-like blocks:  ▂▃▄▅▆▇█
+	// blocks := []rune{' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
-	// Normalize to height? Actually simpler to just show a sparkline on one line if height is small,
-	// or multiple lines. For MVP, let's do a single line sparkline repeated or scaled?
-	// The requirement is "Large historical graph".
-	// Let's attempt a basic multi-line graph.
+	// Single line graph for now to save space, repeated for height?
+	// Or multiple lines.
+	// Let's do a simple multi-line block graph.
 
-	// Find max (always 100 for util)
-	maxVal := 100.0
-
-	// Create a grid
+	// Create grid
 	grid := make([][]rune, height)
 	for i := range grid {
-		grid[i] = make([]rune, len(data))
+		grid[i] = make([]rune, maxPoints)
 		for j := range grid[i] {
 			grid[i][j] = ' '
 		}
 	}
 
-	for x, val := range data {
-		// Calculate height of bar
-		barHeight := int((val / maxVal) * float64(height))
-		if barHeight > height {
-			barHeight = height
+	for x, val := range window {
+		// val is 0-100
+		// Height is 'height'
+		// Calculate how many blocks high
+		h := int((val / 100.0) * float64(height))
+		if h > height {
+			h = height
 		}
 
 		// Fill from bottom
-		for y := 0; y < barHeight; y++ {
-			grid[height-1-y][x] = '█' // or specific block
+		for y := 0; y < h; y++ {
+			grid[height-1-y][x] = '█'
 		}
+		// Add a "cap" block if we want more precision, but full block is fine for MVP
 	}
 
 	for _, row := range grid {
-		sb.WriteString(string(row) + "\n")
+		// Trim right side if strictly needed, but maxPoints handles it
+		sb.WriteString(BarStyle.Render(string(row)) + "\n")
+	}
+
+	return sb.String()
+}
+
+func (m GPUModel) renderProcessTable(height int) string {
+	var sb strings.Builder
+	sb.WriteString(TitleStyle.Render("GPU Processes"))
+	sb.WriteString("\n")
+
+	if len(m.stats.Processes) == 0 {
+		sb.WriteString("No GPU processes found.")
+		return sb.String()
+	}
+
+	// Header
+	sb.WriteString(fmt.Sprintf("%-8s %-15s %s\n", "PID", "Mem", "Name"))
+
+	count := 0
+	for _, p := range m.stats.Processes {
+		if count >= height-2 {
+			break
+		}
+		memStr := fmt.Sprintf("%dMiB", p.MemoryUsed/1024/1024)
+		sb.WriteString(fmt.Sprintf("%-8d %-15s %s\n", p.PID, memStr, p.Name))
+		count++
 	}
 
 	return sb.String()

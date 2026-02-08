@@ -7,6 +7,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/omnitop/internal/config"
 	"github.com/google/omnitop/internal/metrics"
 	"github.com/google/omnitop/internal/ui"
 )
@@ -14,7 +15,15 @@ import (
 func main() {
 	// Parse flags
 	mockMode := flag.Bool("mock", false, "Run in mock mode with simulated data")
+	configPath := flag.String("config", "profiles.json", "Path to configuration file")
 	flag.Parse()
+
+	// Load configuration
+	cfg, err := config.LoadConfig(*configPath)
+	if err != nil {
+		log.Printf("Warning: Failed to load config from %s: %v. Using defaults.", *configPath, err)
+		cfg = config.DefaultConfig()
+	}
 
 	// Initialize metrics provider
 	var provider metrics.Provider
@@ -31,11 +40,11 @@ func main() {
 	}
 	defer provider.Shutdown()
 
-	// Create root model
-	root := ui.NewRootModel(provider)
+	// Create root model with config
+	root := ui.NewRootModel(provider, cfg)
 
 	// Start Bubble Tea program
-	p := tea.NewProgram(root, tea.WithAltScreen())
+	p := tea.NewProgram(root, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if _, err := p.Run(); err != nil {
 		fmt.Printf("Error running OmniTop: %v\n", err)
 		os.Exit(1)

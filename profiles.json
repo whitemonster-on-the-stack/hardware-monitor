@@ -1,12 +1,19 @@
 {
   "theme": "lich-king",
-  "columnWidths": {
+  "column_widths": {
     "gpu": 0.30,
     "process": 0.40,
     "cpu": 0.30
   },
-  "refreshInterval": 1000,
-  "maxProcesses": 200,
-  "gpuHistoryLength": 100,
-  "showTooltips": true
+  "refresh_interval": 1000,
+  "max_processes": 200,
+  "gpu_history_length": 100,
+  "show_tooltips": true,
+  "enabled_modules": [
+    "gpu",
+    "process",
+    "cpu",
+    "net",
+    "disk"
+  ]
 }

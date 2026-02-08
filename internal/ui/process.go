@@ -3,18 +3,22 @@ package ui
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/google/omnitop/internal/metrics"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 type ProcessModel struct {
-	table  table.Model
-	width  int
-	height int
-	stats  []metrics.ProcessInfo
+	table    table.Model
+	width    int
+	height   int
+	stats    []metrics.ProcessInfo
+	sortBy   string // "cpu", "mem", "pid"
+	sortDesc bool
 }
 
 func NewProcessModel() ProcessModel {
@@ -36,15 +40,17 @@ func NewProcessModel() ProcessModel {
 	s.Header = s.Header.
 		Border(lipgloss.NormalBorder(), false, false, true, false).
 		BorderForeground(lipgloss.Color(ColorSteelGray)).
-		Bold(false)
+		Bold(true)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color(ColorIceBlue)).
-		Background(lipgloss.Color(ColorSteelGray)).
+		Foreground(lipgloss.Color(ColorMidnightBlack)).
+		Background(lipgloss.Color(ColorIceBlue)).
 		Bold(false)
 	t.SetStyles(s)
 
 	return ProcessModel{
-		table: t,
+		table:    t,
+		sortBy:   "cpu",
+		sortDesc: true,
 	}
 }
 
@@ -54,23 +60,71 @@ func (m ProcessModel) Init() tea.Cmd {
 
 func (m ProcessModel) Update(msg tea.Msg) (ProcessModel, tea.Cmd) {
 	var cmd tea.Cmd
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "c":
+			m.sortBy = "cpu"
+			m.sortDesc = true
+			m.sortStats()
+		case "m":
+			m.sortBy = "mem"
+			m.sortDesc = true
+			m.sortStats()
+		case "p":
+			m.sortBy = "pid"
+			m.sortDesc = false
+			m.sortStats()
+		case "k", "f9": // Kill / Signal
+			selected := m.table.SelectedRow()
+			if len(selected) > 0 {
+				pidStr := selected[0]
+				var pid int32
+				fmt.Sscanf(pidStr, "%d", &pid)
+				// Actual kill logic
+				if p, err := process.NewProcess(pid); err == nil {
+					// MVP: Terminate signal
+					_ = p.Terminate()
+				}
+			}
+		}
+	}
+
 	m.table, cmd = m.table.Update(msg)
 	return m, cmd
 }
 
 func (m *ProcessModel) SetStats(procs []metrics.ProcessInfo) {
-	// Create a copy to sort
-	sorted := make([]metrics.ProcessInfo, len(procs))
-	copy(sorted, procs)
+	m.stats = procs
+	m.sortStats()
+}
 
-	// Sort by CPU usage descending
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].CPUPercent > sorted[j].CPUPercent
+func (m *ProcessModel) sortStats() {
+	// Sort m.stats based on sortBy
+	sort.Slice(m.stats, func(i, j int) bool {
+		var less bool
+		switch m.sortBy {
+		case "cpu":
+			less = m.stats[i].CPUPercent < m.stats[j].CPUPercent
+		case "mem":
+			less = m.stats[i].MemPercent < m.stats[j].MemPercent
+		case "pid":
+			less = m.stats[i].PID < m.stats[j].PID
+		default:
+			less = m.stats[i].CPUPercent < m.stats[j].CPUPercent
+		}
+
+		if m.sortDesc {
+			return !less
+		}
+		return less
 	})
-	m.stats = sorted
 
-	rows := make([]table.Row, len(sorted))
-	for i, p := range sorted {
+	// Update table rows
+	// Try to keep selection stable?
+	// For MVP, just update rows.
+	rows := make([]table.Row, len(m.stats))
+	for i, p := range m.stats {
 		rows[i] = table.Row{
 			fmt.Sprintf("%d", p.PID),
 			p.User,
@@ -95,15 +149,14 @@ func (m *ProcessModel) SetSize(w, h int) {
 
 	// Adjust columns
 	cols := m.table.Columns()
-	usedWidth := 0
-	for i, c := range cols {
-		if i != 4 { // Command is last
-			usedWidth += c.Width
-		}
-	}
-	// Add padding/borders estimation
-	usedWidth += 10
 
+	// Fixed widths for numeric columns
+	cols[0].Width = 6  // PID
+	cols[1].Width = 10 // User
+	cols[2].Width = 6  // CPU
+	cols[3].Width = 6  // Mem
+
+	usedWidth := 6 + 10 + 6 + 6 + 10 // + padding
 	remaining := w - usedWidth
 	if remaining < 10 {
 		remaining = 10
@@ -119,8 +172,10 @@ func (m ProcessModel) View() string {
 
 	style := PanelStyle.Copy().Width(m.width).Height(m.height)
 
+	headerText := fmt.Sprintf("Processes (Sort: %s) [c:CPU m:MEM p:PID k:Kill]", strings.ToUpper(m.sortBy))
+
 	return style.Render(lipgloss.JoinVertical(lipgloss.Left,
-		TitleStyle.Render("Processes"),
+		TitleStyle.Render(headerText),
 		m.table.View(),
 	))
 }
