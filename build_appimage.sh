@@ -36,7 +36,7 @@ Icon=omnitop
 Type=Application
 Categories=Utility;System;Monitor;
 Terminal=true
-DESKTOP
+EOF
 cp "$APP_DIR/$APP_NAME.desktop" "$APP_DIR/usr/share/applications/"
 
 # Create icon at root of AppDir (REQUIRED by AppImage spec) AND in standard location
@@ -45,30 +45,28 @@ if [ ! -f "omnitop.png" ]; then
     exit 1
 fi
 cp "omnitop.png" "$APP_DIR/omnitop.png"
-cp "omnitop.png" "$APP_DIR/usr/share/icons/hicolor/256x256/apps/"
-
-# Create icon (dummy for now, replace with actual icon if available)
-touch "$APP_DIR/usr/share/icons/hicolor/256x256/apps/omnitop.png"
+cp "omnitop.png" "$APP_DIR/usr/share/icons/hicolor/256x256/apps/omnitop.png"
 
 # Create AppRun script
-cat <<APPRUN > "$APP_DIR/AppRun"
+cat <<EOF > "$APP_DIR/AppRun"
 #!/bin/bash
-HERE="$(dirname "$(readlink -f "${0}")")"
-export PATH="${HERE}/usr/bin:${PATH}"
-exec "${HERE}/usr/bin/omnitop" "$@"
-APPRUN
+HERE="\$(dirname "\$(readlink -f "\${0}")")"
+export PATH="\${HERE}/usr/bin:\${PATH}"
+exec "\${HERE}/usr/bin/omnitop" "\$@"
+EOF
 chmod +x "$APP_DIR/AppRun"
 
 # Download appimagetool if not present
-if [ ! -f "appimagetool-x86_64.AppImage" ]; then
+TOOL="appimagetool-x86_64.AppImage"
+if [ ! -f "$TOOL" ]; then
     echo "Downloading appimagetool..."
-    wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-    chmod +x appimagetool-x86_64.AppImage
+    wget -q https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -O "$TOOL"
+    chmod +x "$TOOL"
 fi
 
 # Build AppImage
 echo "Building AppImage..."
 # Use ARCH env var to help appimagetool
-ARCH=x86_64 ./appimagetool-x86_64.AppImage "$APP_DIR" "$OUTPUT"
+ARCH=x86_64 ./$TOOL "$APP_DIR" "$OUTPUT"
 
 echo "Success! AppImage created: $OUTPUT"

@@ -92,6 +92,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			// Save config on exit
+			m.config.ColumnWidths["gpu"] = m.col1Pct
+			m.config.ColumnWidths["process"] = m.col2Pct
+			m.config.ColumnWidths["cpu"] = 1.0 - m.col1Pct - m.col2Pct
+			// Best effort save to profiles.json
+			if err := config.SaveConfig("profiles.json", m.config); err != nil {
+				log.Printf("Failed to save config: %v", err)
+			}
 			return m, tea.Quit
 		case "[": // Shrink Left Col
 			m.col1Pct -= 0.05
@@ -117,10 +125,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.col2Pct = 0.9 - m.col1Pct
 			}
 			m.resizeModules()
+		case "t": // Toggle Tooltips
+			m.showTooltip = !m.showTooltip
 		}
 
-		// Pass keys to sub-models if needed (e.g. process list scrolling)
+		// Pass keys to sub-models
 		m.process, cmd = m.process.Update(msg)
+		cmds = append(cmds, cmd)
+		m.gpu, cmd = m.gpu.Update(msg) // GPU toggle process list
 		cmds = append(cmds, cmd)
 
 	case tea.WindowSizeMsg:
@@ -157,9 +169,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.process, cmd = m.process.Update(msg)
 		cmds = append(cmds, cmd)
 	}
-
-	// Update other models if they have logic
-	// gpu and cpu currently have no internal update logic needing msgs
 
 	return m, tea.Batch(cmds...)
 }
@@ -282,8 +291,22 @@ func (m RootModel) View() string {
 	// Re-join
 	view = lipgloss.JoinVertical(lipgloss.Left,
 		cols,
-		m.footer.View(),
+		footerView,
 	)
 
 	return view
+}
+
+func (m RootModel) getTooltipText() string {
+	// Determine column based on mouseX
+	w1 := int(float64(m.width) * m.col1Pct)
+	w2 := int(float64(m.width) * m.col2Pct)
+
+	if m.mouseX < w1 {
+		return "GPU Panel: Shows NVIDIA GPU utilization, VRAM usage, and temps. Press 'g' to toggle process view."
+	} else if m.mouseX < w1+w2 {
+		return "Process Panel: Sortable list of running processes. Use 'k' to kill, 'c/m/p' to sort."
+	} else {
+		return "CPU Panel: Per-core usage bars and system load averages."
+	}
 }

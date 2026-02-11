@@ -56,8 +56,8 @@ func NewProcessModel() ProcessModel {
 		BorderForeground(lipgloss.Color(ColorSteelGray)).
 		Bold(true)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color(ColorIceBlue)).
-		Background(lipgloss.Color(ColorSteelGray)).
+		Foreground(lipgloss.Color(ColorMidnightBlack)).
+		Background(lipgloss.Color(ColorIceBlue)).
 		Bold(false)
 	t.SetStyles(s)
 
@@ -217,15 +217,14 @@ func (m *ProcessModel) SetSize(w, h int) {
 
 	// Adjust columns
 	cols := m.table.Columns()
-	usedWidth := 0
-	for i, c := range cols {
-		if i != 4 { // Command is last
-			usedWidth += c.Width
-		}
-	}
-	// Add padding/borders estimation
-	usedWidth += 10
 
+	// Fixed widths for numeric columns
+	cols[0].Width = 6  // PID
+	cols[1].Width = 10 // User
+	cols[2].Width = 6  // CPU
+	cols[3].Width = 6  // Mem
+
+	usedWidth := 6 + 10 + 6 + 6 + 10 // + padding
 	remaining := w - usedWidth
 	if remaining < 10 {
 		remaining = 10
@@ -287,6 +286,8 @@ func (m ProcessModel) View() string {
 
 	ioRow1 := lipgloss.JoinHorizontal(lipgloss.Top, netDownBar, " ", netUpBar)
 	ioRow2 := lipgloss.JoinHorizontal(lipgloss.Top, diskReadBar, " ", diskWriteBar)
+
+	headerText := fmt.Sprintf("Processes (Sort: %s) [c:CPU m:MEM p:PID k:Kill]", strings.ToUpper(m.sortBy))
 
 	return style.Render(lipgloss.JoinVertical(lipgloss.Left,
 		header,

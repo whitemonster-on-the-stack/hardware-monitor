@@ -15,6 +15,7 @@ import (
 func main() {
 	// Parse flags
 	mockMode := flag.Bool("mock", false, "Run in mock mode with simulated data")
+	configPath := flag.String("config", "profiles.json", "Path to configuration file")
 	flag.Parse()
 
 	// Load configuration

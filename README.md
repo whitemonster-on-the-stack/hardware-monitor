@@ -35,7 +35,7 @@ go build -o omnitop cmd/omnitop/main.go
 # Run with real sensors (requires NVIDIA GPU for full GPU metrics)
 ./omnitop
 
-# Run in Mock Mode (simulated data)
+# Run in Mock Mode (simulated data for testing/demo)
 ./omnitop --mock
 ```
 
@@ -82,7 +82,7 @@ Example `profiles.json`:
 
 ## Building AppImage
 
-To create a portable AppImage:
+To create a portable AppImage (requires `wget`):
 
 1.  Ensure `appimagetool` is installed or let the script download it.
 2.  Run the build script:

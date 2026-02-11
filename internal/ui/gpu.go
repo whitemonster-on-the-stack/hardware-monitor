@@ -18,7 +18,9 @@ type GPUModel struct {
 }
 
 func NewGPUModel() GPUModel {
-	return GPUModel{}
+	return GPUModel{
+		showProcesses: false, // Default to graph view
+	}
 }
 
 func (m GPUModel) Init() tea.Cmd {
@@ -26,7 +28,13 @@ func (m GPUModel) Init() tea.Cmd {
 }
 
 func (m GPUModel) Update(msg tea.Msg) (GPUModel, tea.Cmd) {
-	// GPUModel is updated by the Root model passing new stats
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "g":
+			m.showProcesses = !m.showProcesses
+		}
+	}
 	return m, nil
 }
 
@@ -51,7 +59,7 @@ func (m GPUModel) View() string {
 	style = style.Copy().Width(m.width).Height(m.height)
 
 	if !m.stats.Available {
-		content := lipgloss.Place(m.width-2, m.height-2, lipgloss.Center, lipgloss.Center, "GPU Unavailable")
+		content := lipgloss.Place(m.width-2, m.height-2, lipgloss.Center, lipgloss.Center, "GPU Unavailable\n(Run with --mock to see demo)")
 		return style.Render(content)
 	}
 
@@ -141,8 +149,11 @@ func (m GPUModel) renderGraph(height int) string {
 	if maxPoints < 1 {
 		maxPoints = 1
 	}
-	if len(data) > maxPoints {
-		data = data[len(data)-maxPoints:]
+
+	// Create a window of data
+	window := data
+	if len(window) > maxPoints {
+		window = window[len(window)-maxPoints:]
 	}
 
 	var sb strings.Builder
@@ -152,7 +163,7 @@ func (m GPUModel) renderGraph(height int) string {
 	// Symbols for graph:   ▂▃▄▅▆▇█
 	symbols := []rune{' ', ' ', '▂', '▃', '▄', '▅', '▆', '▇', '█'}
 
-	// Create a grid
+	// Create grid
 	grid := make([][]rune, height)
 	for i := range grid {
 		grid[i] = make([]rune, maxPoints) // Use maxPoints instead of len(data) to ensure full width
@@ -196,10 +207,38 @@ func (m GPUModel) renderGraph(height int) string {
 				grid[height-1-fullBlocks][gridIdx] = symbols[symIdx]
 			}
 		}
+		// Add a "cap" block if we want more precision, but full block is fine for MVP
 	}
 
 	for _, row := range grid {
-		sb.WriteString(string(row) + "\n")
+		// Trim right side if strictly needed, but maxPoints handles it
+		sb.WriteString(BarStyle.Render(string(row)) + "\n")
+	}
+
+	return sb.String()
+}
+
+func (m GPUModel) renderProcessTable(height int) string {
+	var sb strings.Builder
+	sb.WriteString(TitleStyle.Render("GPU Processes"))
+	sb.WriteString("\n")
+
+	if len(m.stats.Processes) == 0 {
+		sb.WriteString("No GPU processes found.")
+		return sb.String()
+	}
+
+	// Header
+	sb.WriteString(fmt.Sprintf("%-8s %-15s %s\n", "PID", "Mem", "Name"))
+
+	count := 0
+	for _, p := range m.stats.Processes {
+		if count >= height-2 {
+			break
+		}
+		memStr := fmt.Sprintf("%dMiB", p.MemoryUsed/1024/1024)
+		sb.WriteString(fmt.Sprintf("%-8d %-15s %s\n", p.PID, memStr, p.Name))
+		count++
 	}
 
 	return sb.String()

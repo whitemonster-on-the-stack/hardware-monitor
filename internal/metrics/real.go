@@ -29,14 +29,27 @@ func (r *RealProvider) Init() error {
 	} else {
 		r.hasGPU = true
 		// Initialize GPU history buffer
-		r.gpuHistory = make([]float64, 0, 60)
+		r.gpuHistory = make([]float64, 0, 100)
 	}
+	r.lastTime = time.Now()
+	r.procCache = make(map[int32]*process.Process)
 	return nil
 }
 
 func (r *RealProvider) GetStats() (*SystemStats, error) {
+	now := time.Now()
+	duration := now.Sub(r.lastTime).Seconds()
+	if duration < 0.1 {
+		duration = 0.1 // Prevent division by zero
+	}
+
 	stats := &SystemStats{
-		Timestamp: time.Now(),
+		Timestamp: now,
+	}
+
+	// Host Info (Uptime)
+	if uptime, err := host.Uptime(); err == nil {
+		stats.Uptime = uptime
 	}
 
 	// Uptime
@@ -56,7 +69,12 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		}
 	}
 
-	// Memory
+	// Load Average
+	if avg, err := load.Avg(); err == nil {
+		stats.CPU.LoadAvg = [3]float64{avg.Load1, avg.Load5, avg.Load15}
+	}
+
+	// Memory & Swap
 	vm, err := mem.VirtualMemory()
 	if err == nil {
 		stats.Memory.Total = vm.Total
@@ -64,18 +82,14 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		stats.Memory.Free = vm.Free
 		stats.Memory.UsedPercent = vm.UsedPercent
 	}
+	sw, err := mem.SwapMemory()
+	if err == nil {
+		stats.Memory.SwapTotal = sw.Total
+		stats.Memory.SwapUsed = sw.Used
+		stats.Memory.SwapPercent = sw.UsedPercent
+	}
 
 	// Disk
-	parts, _ := disk.Partitions(false)
-	for _, part := range parts {
-		u, err := disk.Usage(part.Mountpoint)
-		if err == nil {
-			// Basic sum logic or per-partition handling needed.
-			// For MVP, just track totals if needed or specific mount points.
-			// OmniTop MVP focuses on IO, not usage details yet.
-		}
-		_ = u
-	}
 	ioCounters, err := disk.IOCounters()
 	if err == nil {
 		for _, v := range ioCounters {
@@ -83,6 +97,15 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 			stats.Disk.WriteBytes += v.WriteBytes
 		}
 	}
+
+	// Calculate Disk Speed
+	if r.lastDiskRead > 0 {
+		stats.Disk.ReadSpeed = uint64(float64(stats.Disk.ReadBytes-r.lastDiskRead) / duration)
+		stats.Disk.WriteSpeed = uint64(float64(stats.Disk.WriteBytes-r.lastDiskWrite) / duration)
+	}
+	r.lastDiskRead = stats.Disk.ReadBytes
+	r.lastDiskWrite = stats.Disk.WriteBytes
+
 
 	// Network
 	netCounters, err := net.IOCounters(false)
@@ -115,6 +138,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 	r.lastNet = stats.Net
 
 	// GPU (if available)
+	gpuPids := make(map[uint32]bool)
 	if r.hasGPU {
 		count, err := gonvml.DeviceCount()
 		if err == nil && count > 0 {
@@ -138,28 +162,48 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 
 				// Update GPU history
 				r.gpuHistory = append(r.gpuHistory, float64(util))
-				if len(r.gpuHistory) > 60 {
+				if len(r.gpuHistory) > 100 {
 					r.gpuHistory = r.gpuHistory[1:]
 				}
 				stats.GPU.HistoricalUtil = make([]float64, len(r.gpuHistory))
 				copy(stats.GPU.HistoricalUtil, r.gpuHistory)
+
+				// NOTE: mindprince/gonvml does not support process lists or power limits.
+				// Leaving stats.GPU.Processes empty for RealProvider.
 			}
 		}
 	}
 
 	// Processes
-	procs, err := process.Processes()
+	pids, err := process.Pids()
 	if err == nil {
-		// Limit process list for MVP performance
-		limit := 200
+		// New cache for next iteration to clean up old processes
+		newCache := make(map[int32]*process.Process)
+
 		count := 0
-		for _, p := range procs {
+		limit := 200 // Limit for MVP performance
+
+		for _, pid := range pids {
 			if count >= limit {
 				break
 			}
+
+			// Reuse existing process struct if available
+			var p *process.Process
+			if existing, ok := r.procCache[pid]; ok {
+				p = existing
+			} else {
+				p, err = process.NewProcess(pid)
+				if err != nil {
+					continue
+				}
+			}
+			newCache[pid] = p
+
+			// Gather metrics
 			name, _ := p.Name()
 			user, _ := p.Username()
-			cpuP, _ := p.CPUPercent()
+			cpuP, _ := p.Percent(0) // This now works correctly with cached process
 			memP, _ := p.MemoryPercent()
 			memInfo, _ := p.MemoryInfo()
 			rss := uint64(0)
@@ -167,16 +211,42 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				rss = memInfo.RSS
 			}
 
+			// Detailed info
+			ppid, _ := p.Ppid()
+			threads, _ := p.NumThreads()
+			nice, _ := p.Nice()
+			state, _ := p.Status()
+
+			// Handle state slice if it returns multiple characters
+			stateStr := "U"
+			if len(state) > 0 {
+				stateStr = state[0]
+			}
+
+			// Check if using GPU
+			isGpu := false
+			if gpuPids[uint32(p.Pid)] {
+				isGpu = true
+			}
+
 			stats.Processes = append(stats.Processes, ProcessInfo{
 				PID:        p.Pid,
 				User:       user,
 				Command:    name,
+				State:      stateStr,
 				CPUPercent: cpuP,
 				MemPercent: float64(memP),
 				Memory:     rss,
+				Threads:    threads,
+				Priority:   nice,
+				ParentPID:  ppid,
+				IsGPUUser:  isGpu,
 			})
 			count++
 		}
+
+		// Update cache
+		r.procCache = newCache
 	}
 
 	// Resolve GPU Process Names from System Process List
