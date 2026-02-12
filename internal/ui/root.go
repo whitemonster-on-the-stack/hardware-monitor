@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os/exec"
 	"time"
@@ -268,33 +269,18 @@ func (m RootModel) View() string {
 		m.cpu.View(),
 	)
 
-	// Add Footer
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		cols,
-		m.footer.View(),
-	)
-
-	// Overlay Tooltip (in Footer)
+	// Handle tooltip
 	if m.showTooltip && m.tooltipContent != "" {
-		// Re-rendering footer with tooltip content
 		m.footer.SetHelp(m.tooltipContent)
 	} else {
 		m.footer.SetHelp("")
 	}
 
-	// Re-render footer since we might have updated it (Wait, `View` is pure usually, but here I modify footer state?
-	// `SetHelp` on `m.footer` modifies `m`? `m` is value receiver in `View`.
-	// So `m.footer.SetHelp` modifies local copy of footer.
-	// Then `m.footer.View()` uses that local copy.
-	// This works!
-
-	// Re-join
-	view = lipgloss.JoinVertical(lipgloss.Left,
+	// Add Footer
+	return lipgloss.JoinVertical(lipgloss.Left,
 		cols,
-		footerView,
+		m.footer.View(),
 	)
-
-	return view
 }
 
 func (m RootModel) getTooltipText() string {
