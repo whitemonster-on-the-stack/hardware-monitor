@@ -59,3 +59,12 @@ func LoadConfig(path string) (*ProfileConfiguration, error) {
 
 	return cfg, nil
 }
+
+// SaveConfig writes the configuration to the specified path.
+func SaveConfig(path string, cfg *ProfileConfiguration) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(path, data, 0644)
+}

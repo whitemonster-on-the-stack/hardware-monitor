@@ -15,6 +15,7 @@ type GPUModel struct {
 	height int
 	stats  metrics.GPUStats
 	Alert  bool
+	showProcesses bool
 }
 
 func NewGPUModel() GPUModel {
@@ -173,9 +174,9 @@ func (m GPUModel) renderGraph(height int) string {
 	}
 
 	// Determine start index for data in the grid (right-aligned)
-	startIdx := maxPoints - len(data)
+	startIdx := maxPoints - len(window) // Use window length!
 
-	for x, val := range data {
+	for x, val := range window { // Use window!
 		// Calculate height relative to max 100
 		// val is 0-100
 		// height is e.g. 10
@@ -207,11 +208,9 @@ func (m GPUModel) renderGraph(height int) string {
 				grid[height-1-fullBlocks][gridIdx] = symbols[symIdx]
 			}
 		}
-		// Add a "cap" block if we want more precision, but full block is fine for MVP
 	}
 
 	for _, row := range grid {
-		// Trim right side if strictly needed, but maxPoints handles it
 		sb.WriteString(BarStyle.Render(string(row)) + "\n")
 	}
 
@@ -222,37 +221,6 @@ func (m GPUModel) renderProcessTable(height int) string {
 	var sb strings.Builder
 	sb.WriteString(TitleStyle.Render("GPU Processes"))
 	sb.WriteString("\n")
-
-	if len(m.stats.Processes) == 0 {
-		sb.WriteString("No GPU processes found.")
-		return sb.String()
-	}
-
-	// Header
-	sb.WriteString(fmt.Sprintf("%-8s %-15s %s\n", "PID", "Mem", "Name"))
-
-	count := 0
-	for _, p := range m.stats.Processes {
-		if count >= height-2 {
-			break
-		}
-		memStr := fmt.Sprintf("%dMiB", p.MemoryUsed/1024/1024)
-		sb.WriteString(fmt.Sprintf("%-8d %-15s %s\n", p.PID, memStr, p.Name))
-		count++
-	}
-
-	return sb.String()
-}
-
-func (m GPUModel) renderProcessTable(height int) string {
-	var sb strings.Builder
-	sb.WriteString(TitleStyle.Render("GPU Processes"))
-	sb.WriteString("\n")
-
-	// Filter GPU processes
-	// Assuming stats.Processes contains all system processes, we need to filter
-	// wait, stats.Processes is missing in GPUStats struct in types.go?
-	// Let's check types.go. Yes, GPUStats has `Processes []GPUProcess`.
 
 	if len(m.stats.Processes) == 0 {
 		sb.WriteString(MetricLabelStyle.Render("No GPU processes"))
