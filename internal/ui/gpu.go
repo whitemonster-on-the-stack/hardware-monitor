@@ -11,10 +11,11 @@ import (
 )
 
 type GPUModel struct {
-	width  int
-	height int
-	stats  metrics.GPUStats
-	Alert  bool
+	width         int
+	height        int
+	stats         metrics.GPUStats
+	Alert         bool
+	showProcesses bool
 }
 
 func NewGPUModel() GPUModel {
@@ -222,37 +223,6 @@ func (m GPUModel) renderProcessTable(height int) string {
 	var sb strings.Builder
 	sb.WriteString(TitleStyle.Render("GPU Processes"))
 	sb.WriteString("\n")
-
-	if len(m.stats.Processes) == 0 {
-		sb.WriteString("No GPU processes found.")
-		return sb.String()
-	}
-
-	// Header
-	sb.WriteString(fmt.Sprintf("%-8s %-15s %s\n", "PID", "Mem", "Name"))
-
-	count := 0
-	for _, p := range m.stats.Processes {
-		if count >= height-2 {
-			break
-		}
-		memStr := fmt.Sprintf("%dMiB", p.MemoryUsed/1024/1024)
-		sb.WriteString(fmt.Sprintf("%-8d %-15s %s\n", p.PID, memStr, p.Name))
-		count++
-	}
-
-	return sb.String()
-}
-
-func (m GPUModel) renderProcessTable(height int) string {
-	var sb strings.Builder
-	sb.WriteString(TitleStyle.Render("GPU Processes"))
-	sb.WriteString("\n")
-
-	// Filter GPU processes
-	// Assuming stats.Processes contains all system processes, we need to filter
-	// wait, stats.Processes is missing in GPUStats struct in types.go?
-	// Let's check types.go. Yes, GPUStats has `Processes []GPUProcess`.
 
 	if len(m.stats.Processes) == 0 {
 		sb.WriteString(MetricLabelStyle.Render("No GPU processes"))
