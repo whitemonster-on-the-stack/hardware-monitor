@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os/exec"
 	"time"
@@ -178,30 +179,63 @@ func (m *RootModel) checkAlerts(stats *metrics.SystemStats) {
 		return
 	}
 
+	alerts := []string{}
+
 	// Check CPU
-	cpuAlert := stats.CPU.GlobalUsagePercent > m.config.AlertThresholds.CPUUsagePercent
+	cpuAlert := false
+	if stats.CPU.GlobalUsagePercent > m.config.AlertThresholds.CPUUsagePercent {
+		cpuAlert = true
+		alerts = append(alerts, fmt.Sprintf("CPU Total %.0f%%", stats.CPU.GlobalUsagePercent))
+	}
+	if stats.CPU.PerCoreTemp != nil {
+		for i, temp := range stats.CPU.PerCoreTemp {
+			if temp > m.config.AlertThresholds.CPUTempCelsius {
+				cpuAlert = true
+				alerts = append(alerts, fmt.Sprintf("Core %d %.0f°C", i, temp))
+			}
+		}
+	}
 	m.cpu.Alert = cpuAlert
 
 	// Check GPU
-	gpuAlert := stats.GPU.Available && (float64(stats.GPU.Utilization) > m.config.AlertThresholds.GPUUsagePercent || float64(stats.GPU.Temperature) > m.config.AlertThresholds.GPUTempCelsius)
+	gpuAlert := false
+	if stats.GPU.Available {
+		if float64(stats.GPU.Utilization) > m.config.AlertThresholds.GPUUsagePercent {
+			gpuAlert = true
+			alerts = append(alerts, fmt.Sprintf("GPU Util %d%%", stats.GPU.Utilization))
+		}
+		if float64(stats.GPU.Temperature) > m.config.AlertThresholds.GPUTempCelsius {
+			gpuAlert = true
+			alerts = append(alerts, fmt.Sprintf("GPU Temp %d°C", stats.GPU.Temperature))
+		}
+	}
 	m.gpu.Alert = gpuAlert
 
 	// Check Memory (in Process module)
-	memAlert := stats.Memory.UsedPercent > m.config.AlertThresholds.MemoryUsagePercent
+	memAlert := false
+	if stats.Memory.UsedPercent > m.config.AlertThresholds.MemoryUsagePercent {
+		memAlert = true
+		alerts = append(alerts, fmt.Sprintf("Mem %.0f%%", stats.Memory.UsedPercent))
+	}
+	if stats.Memory.SwapPercent > 90 {
+		memAlert = true
+		alerts = append(alerts, fmt.Sprintf("Swap %.0f%%", stats.Memory.SwapPercent))
+	}
 	m.process.Alert = memAlert
 
+	// Disk Alert
+	if stats.Disk.ReadSpeed > 0 || stats.Disk.WriteSpeed > 0 {
+		// Basic check if disk usage is high (TODO: Add disk usage percent check if available)
+		// For MVP, just alerting on threshold from config
+		// If we had disk usage percent, we would check it here.
+	}
+
 	// Notify
-	if (cpuAlert || gpuAlert || memAlert) && time.Since(m.lastAlertTime) > 10*time.Second {
+	if len(alerts) > 0 && time.Since(m.lastAlertTime) > 10*time.Second {
 		m.lastAlertTime = time.Now()
-		msg := "System Alert: "
-		if cpuAlert {
-			msg += fmt.Sprintf("CPU %.0f%% ", stats.CPU.GlobalUsagePercent)
-		}
-		if gpuAlert {
-			msg += fmt.Sprintf("GPU %d%% ", stats.GPU.Utilization)
-		}
-		if memAlert {
-			msg += fmt.Sprintf("Mem %.0f%% ", stats.Memory.UsedPercent)
+		msg := "Alert: " + alerts[0]
+		if len(alerts) > 1 {
+			msg += fmt.Sprintf(" (+%d more)", len(alerts)-1)
 		}
 
 		// Run in background
@@ -268,30 +302,17 @@ func (m RootModel) View() string {
 		m.cpu.View(),
 	)
 
-	// Add Footer
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		cols,
-		m.footer.View(),
-	)
-
 	// Overlay Tooltip (in Footer)
 	if m.showTooltip && m.tooltipContent != "" {
-		// Re-rendering footer with tooltip content
 		m.footer.SetHelp(m.tooltipContent)
 	} else {
 		m.footer.SetHelp("")
 	}
 
-	// Re-render footer since we might have updated it (Wait, `View` is pure usually, but here I modify footer state?
-	// `SetHelp` on `m.footer` modifies `m`? `m` is value receiver in `View`.
-	// So `m.footer.SetHelp` modifies local copy of footer.
-	// Then `m.footer.View()` uses that local copy.
-	// This works!
-
-	// Re-join
-	view = lipgloss.JoinVertical(lipgloss.Left,
+	// Add Footer
+	view := lipgloss.JoinVertical(lipgloss.Left,
 		cols,
-		footerView,
+		m.footer.View(),
 	)
 
 	return view

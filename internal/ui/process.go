@@ -209,7 +209,9 @@ func (m *ProcessModel) SetSize(w, h int) {
 	m.height = h
 
 	// Calculate available height for table
-	tableHeight := h - 4
+	// Header: 1, Newline: 1, Mem: 1, Swap: 1, Net: 1, Disk: 1
+	// Total reserved: 6 lines.
+	tableHeight := h - 6
 	if tableHeight < 1 {
 		tableHeight = 1
 	}
@@ -273,21 +275,19 @@ func (m ProcessModel) View() string {
 	// Use 100MB/s as arbitrary max for visualization for now
 	const maxIO = 100 * 1024 * 1024 // 100MB
 
-	// We need speed (bytes/sec) but stats.Net is Total Bytes.
-	// ProcessModel doesn't store previous stats to calc speed?
-	// metrics.SystemStats has DiskStats which has ReadSpeed/WriteSpeed?
-	// Let's check internal/metrics/types.go. Yes!
+	halfWidth := (m.width - 6) / 2
+	if halfWidth < 10 {
+		halfWidth = 10
+	}
 
-	netDownBar := renderBar(int(m.stats.Net.DownloadSpeed), maxIO, m.width/2-2, fmt.Sprintf("Net ↓ %s/s", formatBytes(m.stats.Net.DownloadSpeed)))
-	netUpBar := renderBar(int(m.stats.Net.UploadSpeed), maxIO, m.width/2-2, fmt.Sprintf("Net ↑ %s/s", formatBytes(m.stats.Net.UploadSpeed)))
+	netDownBar := renderBar(int(m.stats.Net.DownloadSpeed), maxIO, halfWidth, fmt.Sprintf("Net ↓ %s/s", formatBytes(m.stats.Net.DownloadSpeed)))
+	netUpBar := renderBar(int(m.stats.Net.UploadSpeed), maxIO, halfWidth, fmt.Sprintf("Net ↑ %s/s", formatBytes(m.stats.Net.UploadSpeed)))
 
-	diskReadBar := renderBar(int(m.stats.Disk.ReadSpeed), maxIO, m.width/2-2, fmt.Sprintf("Disk R %s/s", formatBytes(m.stats.Disk.ReadSpeed)))
-	diskWriteBar := renderBar(int(m.stats.Disk.WriteSpeed), maxIO, m.width/2-2, fmt.Sprintf("Disk W %s/s", formatBytes(m.stats.Disk.WriteSpeed)))
+	diskReadBar := renderBar(int(m.stats.Disk.ReadSpeed), maxIO, halfWidth, fmt.Sprintf("Disk R %s/s", formatBytes(m.stats.Disk.ReadSpeed)))
+	diskWriteBar := renderBar(int(m.stats.Disk.WriteSpeed), maxIO, halfWidth, fmt.Sprintf("Disk W %s/s", formatBytes(m.stats.Disk.WriteSpeed)))
 
-	ioRow1 := lipgloss.JoinHorizontal(lipgloss.Top, netDownBar, " ", netUpBar)
-	ioRow2 := lipgloss.JoinHorizontal(lipgloss.Top, diskReadBar, " ", diskWriteBar)
-
-	headerText := fmt.Sprintf("Processes (Sort: %s) [c:CPU m:MEM p:PID k:Kill]", strings.ToUpper(m.sortBy))
+	ioRow1 := lipgloss.JoinHorizontal(lipgloss.Top, netDownBar, "  ", netUpBar)
+	ioRow2 := lipgloss.JoinHorizontal(lipgloss.Top, diskReadBar, "  ", diskWriteBar)
 
 	return style.Render(lipgloss.JoinVertical(lipgloss.Left,
 		header,
