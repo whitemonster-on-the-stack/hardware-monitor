@@ -8,6 +8,7 @@ import (
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/host"
+	"github.com/shirou/gopsutil/v3/load"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
 	"github.com/shirou/gopsutil/v3/process"
@@ -19,6 +20,7 @@ type RealProvider struct {
 	lastNet    NetStats
 	lastDisk   DiskStats
 	lastTime   time.Time
+	procCache  map[int32]*process.Process
 }
 
 func (r *RealProvider) Init() error {
@@ -38,9 +40,14 @@ func (r *RealProvider) Init() error {
 
 func (r *RealProvider) GetStats() (*SystemStats, error) {
 	now := time.Now()
-	duration := now.Sub(r.lastTime).Seconds()
-	if duration < 0.1 {
-		duration = 0.1 // Prevent division by zero
+
+	// Calculate duration since last check
+	duration := 0.1
+	if !r.lastTime.IsZero() {
+		duration = now.Sub(r.lastTime).Seconds()
+		if duration < 0.1 {
+			duration = 0.1
+		}
 	}
 
 	stats := &SystemStats{
@@ -52,11 +59,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		stats.Uptime = uptime
 	}
 
-	// Uptime
-	uptime, _ := host.Uptime()
-	stats.Uptime = uptime
-
-	// CPU
+	// CPU Usage
 	cpuPercent, err := cpu.Percent(0, true)
 	if err == nil {
 		stats.CPU.PerCoreUsage = cpuPercent
@@ -67,6 +70,19 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		if len(cpuPercent) > 0 {
 			stats.CPU.GlobalUsagePercent /= float64(len(cpuPercent))
 		}
+	}
+
+	// CPU Temps
+	temps, err := host.SensorsTemperatures()
+	if err == nil {
+		// Simple heuristic: collect all 'core' temps
+		var coreTemps []float64
+		for _, t := range temps {
+			if len(t.SensorKey) >= 4 && t.SensorKey[:4] == "core" {
+				coreTemps = append(coreTemps, t.Temperature)
+			}
+		}
+		stats.CPU.PerCoreTemp = coreTemps
 	}
 
 	// Load Average
@@ -98,15 +114,6 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		}
 	}
 
-	// Calculate Disk Speed
-	if r.lastDiskRead > 0 {
-		stats.Disk.ReadSpeed = uint64(float64(stats.Disk.ReadBytes-r.lastDiskRead) / duration)
-		stats.Disk.WriteSpeed = uint64(float64(stats.Disk.WriteBytes-r.lastDiskWrite) / duration)
-	}
-	r.lastDiskRead = stats.Disk.ReadBytes
-	r.lastDiskWrite = stats.Disk.WriteBytes
-
-
 	// Network
 	netCounters, err := net.IOCounters(false)
 	if err == nil && len(netCounters) > 0 {
@@ -115,24 +122,22 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 	}
 
 	// Calculate speeds
-	now := time.Now()
 	if !r.lastTime.IsZero() {
-		duration := now.Sub(r.lastTime).Seconds()
-		if duration > 0 {
-			if stats.Disk.ReadBytes >= r.lastDisk.ReadBytes {
-				stats.Disk.ReadSpeed = uint64(float64(stats.Disk.ReadBytes-r.lastDisk.ReadBytes) / duration)
-			}
-			if stats.Disk.WriteBytes >= r.lastDisk.WriteBytes {
-				stats.Disk.WriteSpeed = uint64(float64(stats.Disk.WriteBytes-r.lastDisk.WriteBytes) / duration)
-			}
-			if stats.Net.BytesSent >= r.lastNet.BytesSent {
-				stats.Net.UploadSpeed = uint64(float64(stats.Net.BytesSent-r.lastNet.BytesSent) / duration)
-			}
-			if stats.Net.BytesRecv >= r.lastNet.BytesRecv {
-				stats.Net.DownloadSpeed = uint64(float64(stats.Net.BytesRecv-r.lastNet.BytesRecv) / duration)
-			}
+		if stats.Disk.ReadBytes >= r.lastDisk.ReadBytes {
+			stats.Disk.ReadSpeed = uint64(float64(stats.Disk.ReadBytes-r.lastDisk.ReadBytes) / duration)
+		}
+		if stats.Disk.WriteBytes >= r.lastDisk.WriteBytes {
+			stats.Disk.WriteSpeed = uint64(float64(stats.Disk.WriteBytes-r.lastDisk.WriteBytes) / duration)
+		}
+		if stats.Net.BytesSent >= r.lastNet.BytesSent {
+			stats.Net.UploadSpeed = uint64(float64(stats.Net.BytesSent-r.lastNet.BytesSent) / duration)
+		}
+		if stats.Net.BytesRecv >= r.lastNet.BytesRecv {
+			stats.Net.DownloadSpeed = uint64(float64(stats.Net.BytesRecv-r.lastNet.BytesRecv) / duration)
 		}
 	}
+
+	// Update state
 	r.lastTime = now
 	r.lastDisk = stats.Disk
 	r.lastNet = stats.Net
@@ -167,9 +172,6 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 				}
 				stats.GPU.HistoricalUtil = make([]float64, len(r.gpuHistory))
 				copy(stats.GPU.HistoricalUtil, r.gpuHistory)
-
-				// NOTE: mindprince/gonvml does not support process lists or power limits.
-				// Leaving stats.GPU.Processes empty for RealProvider.
 			}
 		}
 	}
@@ -181,7 +183,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 		newCache := make(map[int32]*process.Process)
 
 		count := 0
-		limit := 200 // Limit for MVP performance
+		limit := 1000 // Increased limit
 
 		for _, pid := range pids {
 			if count >= limit {
@@ -193,6 +195,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 			if existing, ok := r.procCache[pid]; ok {
 				p = existing
 			} else {
+				var err error
 				p, err = process.NewProcess(pid)
 				if err != nil {
 					continue
@@ -203,7 +206,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 			// Gather metrics
 			name, _ := p.Name()
 			user, _ := p.Username()
-			cpuP, _ := p.Percent(0) // This now works correctly with cached process
+			cpuP, _ := p.Percent(0)
 			memP, _ := p.MemoryPercent()
 			memInfo, _ := p.MemoryInfo()
 			rss := uint64(0)
@@ -217,7 +220,7 @@ func (r *RealProvider) GetStats() (*SystemStats, error) {
 			nice, _ := p.Nice()
 			state, _ := p.Status()
 
-			// Handle state slice if it returns multiple characters
+			// Handle state slice
 			stateStr := "U"
 			if len(state) > 0 {
 				stateStr = state[0]

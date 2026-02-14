@@ -6,7 +6,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/google/omnitop/internal/metrics"
 )
 
 type FooterModel struct {
@@ -47,15 +46,6 @@ func (m FooterModel) View() string {
 
 	// If help is set (tooltip), show it prominently
 	if m.help != "" {
-		// Tooltip might be multi-line, but footer is usually single line.
-		// We'll just take the first line or join them with spaces.
-		// Actually, prompt says "explain each metric".
-		// We can render a multi-line footer if needed, but height is calculated in resizeModules.
-		// resizeModules sets height: `h := m.height - 1`.
-		// So footer is 1 line effectively? Wait, `View` logic in RootModel:
-		// `lipgloss.JoinVertical(lipgloss.Left, cols, m.footer.View())`
-		// If footer is multiple lines, `cols` height needs to shrink.
-		// For MVP, keep footer single line and replace content.
 		content := fmt.Sprintf("INFO: %s", m.help)
 		return style.Render(content)
 	}

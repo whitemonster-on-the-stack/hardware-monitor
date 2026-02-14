@@ -72,7 +72,9 @@ func (m *MockProvider) GetStats() (*SystemStats, error) {
 	// Fake Processes
 	users := []string{"root", "jules", "systemd"}
 	cmds := []string{"chrome", "code", "go", "kworker", "bash"}
-	m.lastStats.Processes = make([]ProcessInfo, 50) // Reset to avoid appending forever
+	m.lastStats.Processes = make([]ProcessInfo, 50)      // Reset to avoid appending forever
+	m.lastStats.GPU.Processes = make([]GPUProcess, 0, 5) // Reset GPU processes
+
 	for i := 0; i < len(m.lastStats.Processes); i++ {
 		isGpu := i < 5
 		pid := int32(1000 + i)

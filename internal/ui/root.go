@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
 	"os/exec"
 	"time"
@@ -93,12 +94,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			// Save config on exit
-			m.config.ColumnWidths["gpu"] = m.col1Pct
-			m.config.ColumnWidths["process"] = m.col2Pct
-			m.config.ColumnWidths["cpu"] = 1.0 - m.col1Pct - m.col2Pct
-			// Best effort save to profiles.json
-			if err := config.SaveConfig("profiles.json", m.config); err != nil {
-				log.Printf("Failed to save config: %v", err)
+			if m.config != nil {
+				m.config.ColumnWidths["gpu"] = m.col1Pct
+				m.config.ColumnWidths["process"] = m.col2Pct
+				m.config.ColumnWidths["cpu"] = 1.0 - m.col1Pct - m.col2Pct
+				// Best effort save to profiles.json
+				if err := config.SaveConfig("profiles.json", m.config); err != nil {
+					log.Printf("Failed to save config: %v", err)
+				}
 			}
 			return m, tea.Quit
 		case "[": // Shrink Left Col
@@ -178,30 +181,61 @@ func (m *RootModel) checkAlerts(stats *metrics.SystemStats) {
 		return
 	}
 
-	// Check CPU
-	cpuAlert := stats.CPU.GlobalUsagePercent > m.config.AlertThresholds.CPUUsagePercent
-	m.cpu.Alert = cpuAlert
+	alerts := []string{}
+	cpuAlert := false
+	gpuAlert := false
+	memAlert := false
+
+	// Check CPU Global
+	if stats.CPU.GlobalUsagePercent > m.config.AlertThresholds.CPUUsagePercent {
+		cpuAlert = true
+		alerts = append(alerts, fmt.Sprintf("CPU Load %.0f%%", stats.CPU.GlobalUsagePercent))
+	}
+	// Check CPU Individual Cores (Sample check: if any core is > threshold)
+	for _, usage := range stats.CPU.PerCoreUsage {
+		if usage > m.config.AlertThresholds.CPUUsagePercent {
+			cpuAlert = true
+			// Avoid spamming alert message, just generic CPU High
+			break
+		}
+	}
+	// Check CPU Temps
+	for _, temp := range stats.CPU.PerCoreTemp {
+		if temp > m.config.AlertThresholds.CPUTempCelsius {
+			cpuAlert = true
+			alerts = append(alerts, fmt.Sprintf("CPU Temp %.0fC", temp))
+			break
+		}
+	}
 
 	// Check GPU
-	gpuAlert := stats.GPU.Available && (float64(stats.GPU.Utilization) > m.config.AlertThresholds.GPUUsagePercent || float64(stats.GPU.Temperature) > m.config.AlertThresholds.GPUTempCelsius)
-	m.gpu.Alert = gpuAlert
+	if stats.GPU.Available {
+		if float64(stats.GPU.Utilization) > m.config.AlertThresholds.GPUUsagePercent {
+			gpuAlert = true
+			alerts = append(alerts, fmt.Sprintf("GPU Util %d%%", stats.GPU.Utilization))
+		}
+		if float64(stats.GPU.Temperature) > m.config.AlertThresholds.GPUTempCelsius {
+			gpuAlert = true
+			alerts = append(alerts, fmt.Sprintf("GPU Temp %dC", stats.GPU.Temperature))
+		}
+	}
 
 	// Check Memory (in Process module)
-	memAlert := stats.Memory.UsedPercent > m.config.AlertThresholds.MemoryUsagePercent
+	if stats.Memory.UsedPercent > m.config.AlertThresholds.MemoryUsagePercent {
+		memAlert = true
+		alerts = append(alerts, fmt.Sprintf("Mem %.0f%%", stats.Memory.UsedPercent))
+	}
+
+	m.cpu.Alert = cpuAlert
+	m.gpu.Alert = gpuAlert
 	m.process.Alert = memAlert
 
 	// Notify
-	if (cpuAlert || gpuAlert || memAlert) && time.Since(m.lastAlertTime) > 10*time.Second {
+	if len(alerts) > 0 && time.Since(m.lastAlertTime) > 10*time.Second {
 		m.lastAlertTime = time.Now()
-		msg := "System Alert: "
-		if cpuAlert {
-			msg += fmt.Sprintf("CPU %.0f%% ", stats.CPU.GlobalUsagePercent)
-		}
-		if gpuAlert {
-			msg += fmt.Sprintf("GPU %d%% ", stats.GPU.Utilization)
-		}
-		if memAlert {
-			msg += fmt.Sprintf("Mem %.0f%% ", stats.Memory.UsedPercent)
+		msg := "Alert: " + alerts[0]
+		if len(alerts) > 1 {
+			msg += fmt.Sprintf(" (+%d more)", len(alerts)-1)
 		}
 
 		// Run in background
@@ -268,30 +302,20 @@ func (m RootModel) View() string {
 		m.cpu.View(),
 	)
 
-	// Add Footer
-	view := lipgloss.JoinVertical(lipgloss.Left,
-		cols,
-		m.footer.View(),
-	)
-
-	// Overlay Tooltip (in Footer)
+	// Update footer help text based on tooltip state
 	if m.showTooltip && m.tooltipContent != "" {
-		// Re-rendering footer with tooltip content
 		m.footer.SetHelp(m.tooltipContent)
 	} else {
 		m.footer.SetHelp("")
 	}
 
-	// Re-render footer since we might have updated it (Wait, `View` is pure usually, but here I modify footer state?
-	// `SetHelp` on `m.footer` modifies `m`? `m` is value receiver in `View`.
-	// So `m.footer.SetHelp` modifies local copy of footer.
-	// Then `m.footer.View()` uses that local copy.
-	// This works!
+	// Render Footer
+	footer := m.footer.View()
 
-	// Re-join
-	view = lipgloss.JoinVertical(lipgloss.Left,
+	// Combine
+	view := lipgloss.JoinVertical(lipgloss.Left,
 		cols,
-		footerView,
+		footer,
 	)
 
 	return view
